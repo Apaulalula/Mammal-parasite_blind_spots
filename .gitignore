@@ -1,5 +1,6 @@
 # Arquivos de ambiente e histórico do RStudio
 .Rproj.user
+.RDataTmp*
 .Rhistory
 .RData
 .Ruserdata
