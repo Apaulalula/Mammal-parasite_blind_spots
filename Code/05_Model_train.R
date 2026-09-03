@@ -80,20 +80,45 @@ watchlist <- list(train = dtrain, test = dtest)
 
 # Define effort to be fixed
 
-params <- list(
-  objective = "count:poisson",
-  eval_metric = "rmse",
-  max_depth = 6,
-  eta = 0.1
+# params <- list(
+#   objective = "count:poisson",
+#   eval_metric = "rmse",
+#   max_depth = 6,
+#   eta = 0.1
+# )
+
+params_tweedie <- list(
+  objective = "reg:tweedie",
+  tweedie_variance_power = 1.4,
+  eval_metric = "tweedie-nloglik@1.4",
+  max_depth = 4,
+  eta = 0.05,
+  subsample = 0.8
 )
+
+# Cross-validation
+cv_model_ns <- xgb.cv(
+  params = params_tweedie,
+  data = dtrain,
+  nrounds = 1000,
+  nfold = 5,
+  early_stopping_rounds = 20,
+  stratified = FALSE,
+  verbose = 1,
+  prediction = TRUE # Retorna predições out-of-fold para calcular métricas globais
+)
+
+print(cv_model_ns, verbose = TRUE)
+
+nrounds_cross_ns <- cv_model_ns$early_stop$best_iteration # 526
+
 
 # Train model
 model_ns <- xgb.train(
-  params = params,
+  params = params_tweedie,
   data = dtrain,
-  nrounds = 200,
+  nrounds = nrounds_cross_ns,
   evals = list(train = dtrain, test = dtest),
-  early_stopping_rounds = 20,
   verbose = 1
 )
 
@@ -109,49 +134,61 @@ rmse
 
 correlation <- cor(pred, y_test) # 0.8287364
 correlation
+correlation^2
 
 importance <- xgb.importance(model = model_ns)
 importance
 
+#saving model without n_study
 
-save(model_ns, file = "./Output/model_ns.RData")
+saveRDS(model_ns, file = "./Output/model_ns.model")
 
 # Train model without n_study ----
 # Preparing the data
 dtrain_s <- xgb.DMatrix(data = as.matrix(X_train_s), label = y_train)
 dtest_s <- xgb.DMatrix(data = as.matrix(X_test_s), label = y_test)
 
-# Training model
-model_s <- xgb.train(
-  params = params,
-  data = dtrain_s,
-  nrounds = 200,
-  evals = list(train = dtrain_s, test = dtest_s),
-  early_stopping_rounds = 20,
-  verbose = 1
-)
-
-# Cross validation
+# Cross-validation
 cv_model <- xgb.cv(
-  params = params,
+  params = params_tweedie,
   data = dtrain_s,
-  nrounds = 150,
+  nrounds = 1000,
   nfold = 5,
-  metrics = "rmse",
-  early_stopping_rounds = 10 # Para o treino se o teste parar de melhorar
+  early_stopping_rounds = 20,
+  stratified = FALSE,
+  verbose = 1,
+  prediction = TRUE # Retorna predições out-of-fold para calcular métricas globais
 )
 
 print(cv_model, verbose = TRUE)
 
-# evaluate model with n_study
+nrounds_cross <- cv_model$early_stop$best_iteration # 526
 
+# Training model
+model_s <- xgb.train(
+  params = params_tweedie,
+  data = dtrain_s,
+  nrounds = nrounds_cross,
+  evals = list(train = dtrain_s, test = dtest_s),
+  verbose = 1
+)
+
+# evaluate model with n_study
 summary(y_train)
 sd(y_train)
 
 pred <- predict(model_s, dtest_s)
 
-rmse <- sqrt(mean((pred - y_test)^2)) #1.098
-rmse
+# 4. Avaliar métricas na escala original dos dados
+
+mae_test  <- mean(abs(y_test - pred_test))
+medae_test <- median(abs(y_test - pred_test))
+rmse_test <- sqrt(mean((y_test - pred_test)^2))
+
+cat("MAE no Teste:", round(mae_test, 3), "\n")
+cat("Erro Absoluto Mediano (MedAE):", round(medae_test, 3), "\n")
+cat("RMSE no Teste:", round(rmse_test, 3), "\n")
+
 
 correlation <- cor(pred, y_test) #0.99
 correlation^2 #0.98
@@ -159,4 +196,30 @@ correlation^2 #0.98
 importance <- xgb.importance(model = model_s)
 importance
 
-save(model_s, file = "./Output/model_s.RData")
+# Saving model with n_study
+saveRDS(model_s, file = "./Output/model_s.model")
+
+library(ggplot2)
+
+df_eval <- data.frame(
+  Observado = y_test,
+  Predito = pred_test,
+  Residuo = y_test - pred_test
+)
+
+# 1. Gráfico Observado vs Predito
+ggplot(df_eval, aes(x = Observado, y = Predito)) +
+  geom_point(alpha = 0.6, color = "#2c3e50") +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red", linewidth = 0.8) +
+  theme_minimal() +
+  labs(title = "Valores Observados vs. Preditos no Teste",
+       x = "Valor Real (y)", y = "Predição (y_hat)")
+
+# 2. Resíduos vs Preditos
+ggplot(df_eval, aes(x = Predito, y = Residuo)) +
+  geom_point(alpha = 0.6, color = "#2980b9") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_smooth(method = "loess", se = FALSE, color = "orange") +
+  theme_minimal() +
+  labs(title = "Resíduos vs. Valores Preditos",
+       x = "Predição (y_hat)", y = "Resíduo (y - y_hat)")

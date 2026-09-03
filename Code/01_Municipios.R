@@ -58,6 +58,14 @@ bmpo_filtered <- bmpo[, c(1:9, 31:45, 59:67)] %>%
 
 unique(bmpo_filtered$HostGroup)
 
+host_zoonotic <- bmpo_filtered %>% 
+  select(HostSpecies_SBMz, ZoonoticStatus) %>% 
+  mutate(ZoonoticStatus = as.numeric(ZoonoticStatus)) %>% 
+  group_by(HostSpecies_SBMz) %>% 
+  summarise(Zoonotic = max(ZoonoticStatus))
+
+sum(host_zoonotic$Zoonotic)
+
 # Integrate municipality and biome shapefiles -------
 
 mun_bioma <- st_intersection(municipios, biomas)
@@ -144,6 +152,6 @@ Biome_bmpo <- bmpo_biome_final %>%
   distinct()
 
 # save data with biome information into bmpo dataset
-write.csv(M_biome_select, "./data/mcp_biome.csv")
+write.csv(M_biome_select, "./Data/mcp_biome.csv")
 
-write.csv(bmpo_biome_new, "./data/Bmpo_Biome_all.csv", row.names = FALSE)
+write.csv(bmpo_biome_final, "./Data/Bmpo_Biome_all.csv", row.names = FALSE)

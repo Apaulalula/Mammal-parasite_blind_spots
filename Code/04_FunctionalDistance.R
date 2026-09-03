@@ -7,6 +7,7 @@ pacman::p_load(tidyverse, vegan, ape, readxl)
 Host_data <- readxl::read_xlsx("./raw_data/Mammalia_SBMz_v2025-1.xlsx") %>% 
   dplyr::mutate(HostSpecies_SBMz = str_to_lower(BINOMIO),
                 HostSpecies_SBMz = str_replace_all(HostSpecies_SBMz, " ", "_")) %>% 
+  filter(LOCOMOCAO != "Aq") %>% 
   glimpse()
 
 host_sinantropy <- read.csv2("./Data/host_sinantropy.csv", sep = ",") 
@@ -166,8 +167,6 @@ Biome_all <- bind_rows(
   anti_join(bioma_sbmz, Biome_bmpo, by = "HostSpecies_SBMz")
 )
 
-unique(Biome_all$BIOMAS)
-
 Biome_all <- Biome_all %>% 
   filter(!BIOMAS %in% c("ocean_islands", "marine"))
 
@@ -186,5 +185,7 @@ Host_traits <- Host_data %>%
   filter(HostSpecies_SBMz %in% m_species)
 
 Host_traits$sinantropia[is.na(Host_traits$sinantropia)] <- 0
+
+Host_traits <- Host_traits[!is.na(Host_traits$BIOMAS),]
 
 write.csv(Host_traits, "./data/Host_traits.csv", row.names = FALSE)

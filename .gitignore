@@ -1,9 +1,30 @@
+# Arquivos de ambiente e histórico do RStudio
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+# Scripts 
 Code/PhylogeneticDistance.R
 Code/Synantropy.R
+
+# raw data
 raw_data/Especies_cacadas_Brasil.xlsx
 raw_data/Mammals_category.csv
 raw_data/SYNANTROPY_RODENTS_41467_2022_35273_MOESM4_ESM.xlsx
+
+# Shapefiles
+Shapefiles/
+raw_data/
+*.zip
+*.7z
+*.tif
+*.tiff
+*.shp
+*.shx
+*.dbf
+*.cpg
+*.prj
+
+# svg figures
+Figures/orders.svg
