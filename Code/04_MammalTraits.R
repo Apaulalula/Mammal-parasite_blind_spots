@@ -12,9 +12,28 @@ Host_data <- readxl::read_xlsx("./raw_data/Mammalia_SBMz_v2025-1.xlsx") %>%
 
 host_sinantropy <- read.csv2("./Data/host_sinantropy.csv", sep = ",") 
 
-tax_axes <- read.csv2("./Data/tax.axes.csv", sep = ",")
+tree_final <- read.tree("./Data/tree_final_mammals.tree")
 
 # Work on host functional features to include in the XGboost model ----
+
+## Phylogenetic distance ----
+# Cophenetic distance matrix 
+dist_phylo <- cophenetic(tree_final)
+
+# (PCoA / Classical Multidimensional Scaling)
+# k = 10
+pcoa_phylo <- cmdscale(dist_phylo, k = 10, eig = TRUE)
+
+# Visualize variance explained
+var_exp <- (pcoa_phylo$eig / sum(pcoa_phylo$eig[pcoa_phylo$eig > 0])) * 100
+barplot(var_exp[1:10], names.arg = paste0("PhyloPC", 1:10),
+        ylab = "% Variância Explicada", col = "#2c3e50",
+        main = "Variância dos Autovetores Filogenéticos")
+
+# Convert to dataframe
+phylo_pcs_df <- as.data.frame(pcoa_phylo$points)[,1:3]
+colnames(phylo_pcs_df) <- paste0("PhyloPC", 1:ncol(phylo_pcs_df))
+phylo_pcs_df$HostSpecies_SBMz <- rownames(phylo_pcs_df)
 
 ## Diet proportion ----
 bmpo_diet <- bmpo[,c(5,18:27)] %>% 
@@ -82,8 +101,13 @@ plot(
   col = "red"
 )
 
-## Work on extinction vulnerability categories ----
+## Body mass ----
+ body_mass <- bmpo %>% 
+   select(HostSpecies_SBMz, BodyMass.g) %>% 
+   distinct() %>% 
+   filter(HostSpecies_SBMz != "not_found")
 
+## Work on extinction vulnerability categories ----
 unique(Host_data$`MMA 2023`)
 unique(bmpo$IUCN.Status)
 
@@ -161,31 +185,28 @@ bioma_sbmz <- Host_data %>%
   select(-`OCORRENCIA BIOMAS`)
 
 # Filling biome information of species lacking in BMPO
-
 Biome_all <- bind_rows(
-  Biome_bmpo,
-  anti_join(bioma_sbmz, Biome_bmpo, by = "HostSpecies_SBMz")
+  bioma_sbmz,
+  anti_join(Biome_bmpo, bioma_sbmz, by = "HostSpecies_SBMz")
 )
 
 Biome_all <- Biome_all %>% 
   filter(!BIOMAS %in% c("ocean_islands", "marine"))
+unique(Biome_all$BIOMAS)
 
 # Gather all features in one dataframe ----
 
-Host_traits <- Host_data %>%
-  dplyr::full_join(tax_axes, by = "HostSpecies_SBMz") %>%
+Host_traits <- phylo_pcs_df %>%
+  dplyr::full_join(body_mass, by = "HostSpecies_SBMz") %>% 
   dplyr::full_join(Host_threat, by = "HostSpecies_SBMz") %>% 
   dplyr::full_join(Host_diet, by = "HostSpecies_SBMz") %>% 
-  dplyr::full_join(host_sinantropy, by = "HostSpecies_SBMz") %>% 
-  dplyr::full_join(Biome_all, by = "HostSpecies_SBMz") %>% 
-  dplyr::select(
-    HostSpecies_SBMz, diet_shannon, diet_axis1, diet_axis2, sinantropia,
-    threatened, threat_score, TaxoPC1, TaxoPC2, BIOMAS
-  ) %>% 
-  filter(HostSpecies_SBMz %in% m_species)
+  dplyr::full_join(host_sinantropy, by = "HostSpecies_SBMz") %>%
+  filter(HostSpecies_SBMz %in% m_species) %>% 
+  distinct() %>% 
+  glimpse()
 
 Host_traits$sinantropia[is.na(Host_traits$sinantropia)] <- 0
 
-Host_traits <- Host_traits[!is.na(Host_traits$BIOMAS),]
-
 write.csv(Host_traits, "./data/Host_traits.csv", row.names = FALSE)
+
+write.csv(Biome_all, "./data/Biome_all.csv", row.names = FALSE)

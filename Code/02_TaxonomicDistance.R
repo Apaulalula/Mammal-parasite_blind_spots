@@ -14,7 +14,10 @@ taxa_sbmz <- Host_data %>%
          HostGenus = GENERO,
          HostSpecies_SBMz = BINOMIO) %>% 
   dplyr::mutate(across(where(is.character), str_to_lower),
-                HostSpecies_SBMz = str_replace_all(HostSpecies_SBMz, " ", "_")) %>% 
+                HostSpecies_SBMz = str_replace_all(HostSpecies_SBMz, " ", "_")) %>%   
+  mutate(HostOrder = case_when(HostOrder == "artiodactyla" ~ "cetartiodactyla", 
+                               .default = as.character(HostOrder))) %>% 
+
   distinct()
 
 taxa_df <- bmpo %>%
@@ -24,9 +27,11 @@ taxa_df <- bmpo %>%
   distinct()
 
 taxa_all <- bind_rows(
-  taxa_sbmz,
-  anti_join(taxa_df, taxa_sbmz, by = "HostSpecies_SBMz")
+  taxa_df,
+  anti_join(taxa_sbmz,taxa_df, by = "HostSpecies_SBMz")
 )
+
+unique(taxa_all$HostOrder)
 
 # BUild matrix
 n <- nrow(taxa_all)

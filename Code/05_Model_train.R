@@ -1,34 +1,43 @@
 # Packages
-pacman::p_load(xgboost, caret, Matrix, fastDummies, yardstick)
+pacman::p_load(xgboost,tidyverse, caret, Matrix, fastDummies, yardstick, ggplot2)
 
-# Load data
-
+# Load data ----
 bmpo_biome_final <- read.csv2("./Data/Bmpo_Biome_all.csv", sep = ",") %>% 
-  glimpse() 
-Host_traits <- read.csv2("./Data/Host_traits.csv", sep = ",") %>% 
   glimpse()
 
-# Transform data
-bmpo_biome_final <- bmpo_biome_final %>% 
-  select(- BIOMAS)
+Host_traits <- read.csv2("./Data/Host_traits.csv", sep = ",") %>%  
+  mutate(across(
+    c(
+      diet_shannon,
+      diet_axis1,
+      diet_axis2,
+      PhyloPC1,
+      PhyloPC2,
+      PhyloPC3,
+      BodyMass.g
+      ),
+    as.numeric
+    )) %>% 
+  glimpse()
 
-bmpo_ml <- Host_traits %>% 
-  right_join(bmpo_biome_final) %>%
-  select(- c(threatened, diet_axis2)) %>% 
-  mutate(across(c(diet_shannon, diet_axis1, sinantropia, threat_score, TaxoPC1, TaxoPC2), as.numeric)) %>% 
-  group_by(HostSpecies_SBMz, Parasite, sinantropia, BIOMAS) %>%
-  summarise(
+# Gather and transform data ----
+  
+bmpo_ml <- bmpo_biome_final %>% 
+  filter(!BIOMAS %in% c("ocean_islands", "not_found")) %>% 
+ left_join(Host_traits, by= "HostSpecies_SBMz") %>%
+  select(- c(diet_axis2, PhyloPC3, threatened)) %>%
+  dplyr::group_by(HostSpecies_SBMz, Parasite, sinantropia, BIOMAS) %>%
+  dplyr::summarise(
     across(where(is.double), first),
-    n_study = n_distinct(ReferenceUsedParasite),
-    parasite_richness = n_distinct(ParasiteCurrentName),
-    .groups = "drop"
+    n_study = dplyr::n_distinct(ReferenceUsedParasite, na.rm = TRUE),
+    parasite_richness = dplyr::n_distinct(ParasiteCurrentName, na.rm = TRUE)
   ) %>% 
   ungroup() %>% 
   glimpse()
-  
+
 unique(bmpo_ml$HostSpecies_SBMz)
 
-# model
+# Build model features ----
 df_model <- bmpo_ml %>% 
   dummy_cols(select_columns = c("Parasite", "BIOMAS"),
              remove_first_dummy = TRUE,
@@ -37,7 +46,7 @@ df_model <- bmpo_ml %>%
 
 write.csv(df_model, "./data/df_model.csv", row.names = FALSE)
 
-# divide x and y
+# Make X and Y for both models ----
 str(df_model)
 
 y <- df_model$parasite_richness
@@ -52,7 +61,7 @@ X <- df_model %>%
   mutate_if(is.character, as.numeric) %>% 
   as.matrix()
 
-# divide train and test data
+## divide train and test data
 
 set.seed(42)
 
@@ -67,26 +76,18 @@ X_test_s  <- X_study[-train_index, ]
 y_train <- y[train_index]
 y_test  <- y[-train_index]
 
+summary(y_train) # mean 4.01
+sd(y_train) # 4.95
+
 # Train model without n_study ----
 # Preparando os dados
 dtrain <- xgb.DMatrix(data = as.matrix(X_train), label = y_train)
 dtest <- xgb.DMatrix(data = as.matrix(X_test), label = y_test)
 
-# Criando uma lista de monitoramento (watchlist)
+# building watchlist
 watchlist <- list(train = dtrain, test = dtest)
 
-# O output no console mostrará o erro de treino e teste a cada iteração.
-# Se o 'test-rmse' começar a subir enquanto o 'train-rmse' cai, há overfitting.
-
-# Define effort to be fixed
-
-# params <- list(
-#   objective = "count:poisson",
-#   eval_metric = "rmse",
-#   max_depth = 6,
-#   eta = 0.1
-# )
-
+# setting parameters
 params_tweedie <- list(
   objective = "reg:tweedie",
   tweedie_variance_power = 1.4,
@@ -96,7 +97,7 @@ params_tweedie <- list(
   subsample = 0.8
 )
 
-# Cross-validation
+# Cross-validation analysis
 cv_model_ns <- xgb.cv(
   params = params_tweedie,
   data = dtrain,
@@ -110,8 +111,7 @@ cv_model_ns <- xgb.cv(
 
 print(cv_model_ns, verbose = TRUE)
 
-nrounds_cross_ns <- cv_model_ns$early_stop$best_iteration # 526
-
+nrounds_cross_ns <- cv_model_ns$early_stop$best_iteration # 198
 
 # Train model
 model_ns <- xgb.train(
@@ -123,21 +123,26 @@ model_ns <- xgb.train(
 )
 
 # evaluate model without n_study
-summary(y_train)
-sd(y_train)
-
 pred <- predict(model_ns, dtest)
 
 # Seeing model metrics
-rmse <- sqrt(mean((pred - y_test)^2)) # 5.517982
-rmse
+mae_test  <- mean(abs(pred - y_test)) #2.263 
+medae_test <- median(abs(pred - y_test)) #1.42
+rmse_test <- sqrt(mean((pred - y_test)^2)) #3.43
 
-correlation <- cor(pred, y_test) # 0.8287364
+cat("MAE no Teste:", round(mae_test, 3), "\n")
+cat("Erro Absoluto Mediano (MedAE):", round(medae_test, 3), "\n")
+cat("RMSE no Teste:", round(rmse_test, 3), "\n")
+
+correlation <- cor(pred, y_test) # 0.58
 correlation
-correlation^2
+correlation^2 #0.33
 
-importance <- xgb.importance(model = model_ns)
-importance
+importance_ns <- xgb.importance(model = model_ns)
+importance_ns
+#  1:             BodyMass.g 0.30159857 0.317158975 0.27681842
+# 2:               PhyloPC1 0.15656911 0.149188467 0.17687075
+# 3:             diet_axis1 0.12209737 0.113088365 0.09000523
 
 #saving model without n_study
 
@@ -162,7 +167,7 @@ cv_model <- xgb.cv(
 
 print(cv_model, verbose = TRUE)
 
-nrounds_cross <- cv_model$early_stop$best_iteration # 526
+nrounds_cross <- cv_model$early_stop$best_iteration # 192
 
 # Training model
 model_s <- xgb.train(
@@ -174,37 +179,38 @@ model_s <- xgb.train(
 )
 
 # evaluate model with n_study
-summary(y_train)
-sd(y_train)
 
 pred <- predict(model_s, dtest_s)
 
 # 4. Avaliar métricas na escala original dos dados
 
-mae_test  <- mean(abs(y_test - pred_test))
-medae_test <- median(abs(y_test - pred_test))
-rmse_test <- sqrt(mean((y_test - pred_test)^2))
+mae_test  <- mean(abs(pred - y_test)) #1.28
+medae_test <- median(abs(pred - y_test)) #0.673
+rmse_test <- sqrt(mean((pred - y_test)^2)) #2.21
 
 cat("MAE no Teste:", round(mae_test, 3), "\n")
 cat("Erro Absoluto Mediano (MedAE):", round(medae_test, 3), "\n")
 cat("RMSE no Teste:", round(rmse_test, 3), "\n")
 
+correlation <- cor(pred, y_test) #0.85
+correlation^2 #0.72
 
-correlation <- cor(pred, y_test) #0.99
-correlation^2 #0.98
+importance_s <- xgb.importance(model = model_s)
+importance_s
 
-importance <- xgb.importance(model = model_s)
-importance
+# 1:                n_study 0.754306082 0.288482281 0.19712644
+# 2:             BodyMass.g 0.070923249 0.206958751 0.20402299
+# 3:               PhyloPC1 0.045466983 0.118788043 0.15804598
 
 # Saving model with n_study
 saveRDS(model_s, file = "./Output/model_s.model")
 
-library(ggplot2)
+## Visualize correlation ----
 
 df_eval <- data.frame(
   Observado = y_test,
-  Predito = pred_test,
-  Residuo = y_test - pred_test
+  Predito = pred,
+  Residuo = y_test - pred
 )
 
 # 1. Gráfico Observado vs Predito

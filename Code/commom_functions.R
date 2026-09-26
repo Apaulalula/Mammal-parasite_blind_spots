@@ -2,6 +2,8 @@
 
 remove_after_second_underscore <- function(x) sub("^(([^_]*_){1}[^_]*).*", "\\1", x)
 
+# Taxonomic distance function ----
+
 taxonomic_distance <- function(sp1, sp2){
   
   if(sp1$HostSpecies_SBMz == sp2$HostSpecies_SBMz){
@@ -23,6 +25,71 @@ taxonomic_distance <- function(sp1, sp2){
   return(4)
 }
 
+# Build mammal phylogenetic tree ----
+
+enxertar_especie_robusta <- function(tr, sp_nova, lista_irmas = NULL, genero = NULL) {
+  if (is.null(tr$edge.length) || any(is.na(tr$edge.length))) {
+    tr <- compute.brlen(tr, 1)
+  }
+  
+  # A. Tenta enxertar como irmã da espécie conhecida
+  if (!is.null(lista_irmas)) {
+    irma_presente <- lista_irmas[lista_irmas %in% tr$tip.label][1]
+    
+    if (!is.na(irma_presente)) {
+      tip_idx <- which(tr$tip.label == irma_presente)
+      edge_idx <- which(tr$edge[, 2] == tip_idx)
+      branch_len <- tr$edge.length[edge_idx]
+      if (is.na(branch_len) || branch_len <= 0) branch_len <- 1e-4
+      
+      message(paste("-> Enxertando", sp_nova, "como irma de", irma_presente))
+      return(bind.tip(
+        tree = tr,
+        tip.label = sp_nova,
+        where = tip_idx,
+        position = branch_len / 2,
+        edge.length = branch_len / 2
+      ))
+    }
+  }
+  
+  # B. Fallback para congêneres / MRCA do gênero
+  congeneres <- grep(paste0("^", genero, "_"), tr$tip.label, value = TRUE)
+  
+  if (length(congeneres) == 1) {
+    tip_idx <- which(tr$tip.label == congeneres)
+    edge_idx <- which(tr$edge[, 2] == tip_idx)
+    branch_len <- tr$edge.length[edge_idx]
+    if (is.na(branch_len) || branch_len <= 0) branch_len <- 1e-4
+    
+    message(paste("-> Enxertando", sp_nova, "no unico congenere:", congeneres))
+    return(bind.tip(
+      tree = tr,
+      tip.label = sp_nova,
+      where = tip_idx,
+      position = branch_len / 2,
+      edge.length = branch_len / 2
+    ))
+    
+  } else if (length(congeneres) > 1) {
+    mrca_node <- findMRCA(tr, congeneres)
+    dist_mrca_to_tip <- nodeheight(tr, which(tr$tip.label == congeneres[1])) - nodeheight(tr, mrca_node)
+    if (dist_mrca_to_tip <= 0) dist_mrca_to_tip <- 1e-4
+    
+    message(paste("-> Enxertando", sp_nova, "na base (MRCA) do genero:", genero))
+    return(bind.tip(
+      tree = tr,
+      tip.label = sp_nova,
+      where = mrca_node,
+      position = 0,
+      edge.length = dist_mrca_to_tip
+    ))
+    
+  } else {
+    warning(paste("Pulando", sp_nova, "- Nenhum representante para o genero:", genero))
+    return(tr)
+  }
+}
 
 # 1. Função de Tema Customizada
 theme_projeto <- function(base_size = 11, legend= "bottom", angle= 45) {
@@ -74,8 +141,7 @@ biome_plot <- function(data){
       color = "grey15",
     ) +
     scale_fill_parasite()+
-    facet_wrap(~biome, nrow = 3,
-               ncol = 2,)+
+    facet_wrap(~biome, ncol= 2, nrow=3)+
     labs(
       x = NULL,
       y = "Completeness"

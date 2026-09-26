@@ -1,7 +1,6 @@
 # Packages
 pacman::p_load(tidyverse, ggplot2, caret, devtools, viridis, patchwork, hrbrthemes, fmsb, colormap)
 
-
 # Load models
 df_all <- read.csv2("./data/df_model.csv", sep =",") #all data
 
@@ -108,10 +107,6 @@ ggsave(
   dpi = 600,
   bg = "white"
 )
-
-# aggregating data
-all_results <- results %>% 
-  bind_rows(no_study_species)
 
 # Relationship with predicted and observaed richeness ----
 # linear and R²
@@ -309,7 +304,6 @@ mean_biome<- results %>%
   ) %>%
   ungroup()
 
-
 dens_plot<- ggplot(results, aes(x = completeness)) +
   # Histograma em proporção de densidade (position = "identity" evita empilhamento confuso)
   geom_histogram(
@@ -353,7 +347,6 @@ dens_plot<- ggplot(results, aes(x = completeness)) +
     y = "Density"
   ) +
   theme_projeto(angle= 360, legend= "none")
-
 
 ggsave(
   filename = "./Figures/dens_biome.png",

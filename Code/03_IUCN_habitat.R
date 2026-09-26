@@ -33,6 +33,7 @@ dados_finais <- dummy_cols(sp_habitat,
    dplyr::mutate(HostSpecies_SBMz = str_to_lower(species_used),
                  HostSpecies_SBMz = str_replace_all(HostSpecies_SBMz, " ", "_")) %>% 
    select(-species_used) %>% 
+   distinct() %>% 
    glimpse()
 
  
